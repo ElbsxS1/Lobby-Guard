@@ -1,0 +1,37 @@
+# LobbyGuard - configuração
+# Cores com & (ex.: &a = verde, &l = negrito).
+#
+# IMPORTANTE: todas as regras abaixo valem SOMENTE no mundo do lobby.
+# O mundo de sobrevivência não recebe nenhuma proteção, luz ou regra do lobby.
+
+worlds:
+  # Nome exato do mundo do lobby (pode ser "world" se o lobby for o mundo principal)
+  lobby: lobby
+  # Nome exato do mundo de sobrevivência
+  survival: survival
+  # Se o mundo não existir, o plugin cria (se já existir, apenas carrega)
+  create-if-missing: true
+  # Tipo do mundo criado: FLAT, NORMAL, LARGE_BIOMES, AMPLIFIED
+  lobby-type: FLAT
+  survival-type: NORMAL
+
+lobby:
+  # Todo jogador que entrar no servidor aparece no spawn do lobby
+  teleport-on-join: true
+  # Horário fixo do lobby (6000 = meio-dia). O tempo não passa e não chove.
+  time: 6000
+  # Visão noturna permanente no lobby (luz em todo o lugar). Some ao sair do lobby.
+  night-vision: true
+  # Se o jogador cair no void, volta ao spawn do lobby
+  void-teleport: true
+  # "auto" = altura mínima do mundo. Ou coloque um número (ex.: 0).
+  void-y: auto
+
+npc:
+  name: "&a&l▶ Sobrevivência"
+  # Tempo mínimo entre dois cliques do mesmo jogador (milissegundos)
+  click-cooldown-ms: 1500
+
+messages:
+  teleporting: "&aVocê foi enviado ao mundo de sobrevivência!"
+  survival-unavailable: "&cO mundo de sobrevivência não está disponível agora."

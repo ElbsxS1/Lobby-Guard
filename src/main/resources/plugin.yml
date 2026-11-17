@@ -1,0 +1,17 @@
+name: LobbyGuard
+version: ${project.version}
+main: com.asthen.lobbyguard.LobbyGuard
+api-version: '26.3'
+description: Lobby protegido com NPC que teleporta para o mundo de sobrevivência
+commands:
+  lobbyguard:
+    description: Administra o lobby (NPC, spawn, reload)
+    usage: /lobbyguard <setnpc|removenpc|setspawn|reload>
+    permission: lobbyguard.admin
+permissions:
+  lobbyguard.admin:
+    description: Usar o comando /lobbyguard
+    default: op
+  lobbyguard.bypass:
+    description: Ignorar as proteções do lobby (quebrar, colocar, etc.)
+    default: op
