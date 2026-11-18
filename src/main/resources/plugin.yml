@@ -9,9 +9,13 @@ commands:
     usage: /lob
     aliases: [lobby, hub]
     permission: lobbyguard.use
+  neve:
+    description: Neve de Natal no lobby (on/off/encher/limpar)
+    usage: /neve <on|off|encher|limpar> [raio]
+    permission: lobbyguard.admin
   lobbyguard:
     description: Administra o lobby (NPC, spawn, reload)
-    usage: /lobbyguard <setnpc|removenpc|setspawn|reload>
+    usage: /lobbyguard <setnpc|removenpc|setspawn|setsurvivallobby|reload>
     permission: lobbyguard.admin
 permissions:
   lobbyguard.use:

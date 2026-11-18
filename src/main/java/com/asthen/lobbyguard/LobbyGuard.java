@@ -8,11 +8,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
+import org.bukkit.HeightMap;
+import org.bukkit.Particle;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -23,6 +26,9 @@ import org.bukkit.WorldType;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.type.Snow;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Entity;
@@ -56,6 +62,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.weather.WeatherChangeEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.persistence.PersistentDataType;
@@ -72,7 +79,8 @@ import org.bukkit.util.Vector;
 public final class LobbyGuard extends JavaPlugin implements Listener, TabExecutor {
 
     private static final String BYPASS = "lobbyguard.bypass";
-    private static final List<String> SUBCOMMANDS = List.of("setnpc", "removenpc", "setspawn", "reload");
+    private static final List<String> NEVE_SUBCOMMANDS = List.of("on", "off", "encher", "limpar", "status");
+    private static final List<String> SUBCOMMANDS = List.of("setnpc", "removenpc", "setspawn", "setsurvivallobby", "reload");
 
     private final Map<UUID, Long> cooldowns = new HashMap<>();
     private final Map<UUID, BukkitTask> returning = new HashMap<>();
@@ -91,6 +99,19 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     private String msgTeleporting;
     private String msgUnavailable;
     private int lobbyDelay;
+    private File playersFile;
+    private YamlConfiguration players;
+    private boolean snowEnabled;
+    private int snowDensity;
+    private int snowRadius;
+    private int snowHeight;
+    private double snowSpeed;
+    private int fillDefaultRadius;
+    private int fillMaxRadius;
+    private int columnsPerTick;
+    private boolean respawnAtSurvivalLobby;
+    private boolean ignoreBed;
+    private BukkitTask snowJob;
     private double lobbyMoveTolerance;
     private boolean createMissing;
     private boolean teleportOnJoin;
@@ -109,12 +130,27 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         saveDefaultConfig();
         npcKey = new NamespacedKey(this, "lobby_npc");
         dataFile = new File(getDataFolder(), "data.yml");
+        playersFile = new File(getDataFolder(), "players.yml");
         loadAll();
 
         Bukkit.getPluginManager().registerEvents(this, this);
 
         if (getCommand("lob") != null) {
             getCommand("lob").setExecutor((sender, cmd, label, args) -> lobCommand(sender));
+        }
+        if (getCommand("neve") != null) {
+            getCommand("neve").setExecutor((snd, cm, lb, ar) -> neveCommand(snd, ar));
+            getCommand("neve").setTabCompleter((snd, cm, lb, ar) -> {
+                List<String> res = new ArrayList<>();
+                if (ar.length == 1) {
+                    for (String sc : NEVE_SUBCOMMANDS) {
+                        if (sc.startsWith(ar[0].toLowerCase(Locale.ROOT))) {
+                            res.add(sc);
+                        }
+                    }
+                }
+                return res;
+            });
         }
         if (getCommand("lobbyguard") != null) {
             getCommand("lobbyguard").setExecutor(this);
@@ -123,6 +159,7 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
 
         Bukkit.getScheduler().runTaskTimer(this, this::tickLobby, 40L, 40L);
         Bukkit.getScheduler().runTaskTimer(this, this::ensureNpc, 100L, 100L);
+        Bukkit.getScheduler().runTaskTimer(this, this::tickSnow, 20L, 2L);
     }
 
     private void loadAll() {
@@ -150,6 +187,17 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
                 "&cO mundo de sobrevivência não está disponível agora.");
 
         data = YamlConfiguration.loadConfiguration(dataFile);
+        players = YamlConfiguration.loadConfiguration(playersFile);
+        snowEnabled = data.getBoolean("snow-enabled", false);
+        snowDensity = Math.max(1, c.getInt("snow.density", 30));
+        snowRadius = Math.max(4, c.getInt("snow.radius", 20));
+        snowHeight = Math.max(4, c.getInt("snow.height", 12));
+        snowSpeed = Math.max(0.05, c.getDouble("snow.fall-speed", 0.4));
+        fillDefaultRadius = Math.max(1, c.getInt("snow.fill-default-radius", 60));
+        fillMaxRadius = Math.max(fillDefaultRadius, c.getInt("snow.fill-max-radius", 150));
+        columnsPerTick = Math.max(50, c.getInt("snow.columns-per-tick", 500));
+        respawnAtSurvivalLobby = c.getBoolean("survival.respawn-at-lobby", true);
+        ignoreBed = c.getBoolean("survival.ignore-bed", true);
 
         if (lobbyName.equalsIgnoreCase(survivalName)) {
             getLogger().warning("O mundo do lobby e o de sobrevivência têm o mesmo nome. Corrija o config.yml.");
@@ -225,6 +273,58 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         return new Location(w,
                 data.getDouble("npc.x"), data.getDouble("npc.y"), data.getDouble("npc.z"),
                 (float) data.getDouble("npc.yaw"), (float) data.getDouble("npc.pitch"));
+    }
+
+    private boolean isSurvival(World w) {
+        return w != null && w.getName().equalsIgnoreCase(survivalName);
+    }
+
+    /** Lobby da sobrevivência (definido com /lobbyguard setsurvivallobby) ou o spawn do mundo. */
+    private Location survivalLobby() {
+        World w = Bukkit.getWorld(survivalName);
+        if (w == null) {
+            return null;
+        }
+        if (data.contains("survival-lobby.x")) {
+            return new Location(w,
+                    data.getDouble("survival-lobby.x"), data.getDouble("survival-lobby.y"),
+                    data.getDouble("survival-lobby.z"),
+                    (float) data.getDouble("survival-lobby.yaw"), (float) data.getDouble("survival-lobby.pitch"));
+        }
+        return w.getSpawnLocation().add(0.5, 0, 0.5);
+    }
+
+    private void savePlayers() {
+        try {
+            players.save(playersFile);
+        } catch (IOException ex) {
+            getLogger().severe("Falha ao salvar players.yml: " + ex.getMessage());
+        }
+    }
+
+    /** Guarda onde o jogador estava na sobrevivência (base) para ele voltar ali pelo NPC. */
+    private void saveSurvivalLocation(Player p, Location l) {
+        if (l == null || !isSurvival(l.getWorld())) {
+            return;
+        }
+        String k = p.getUniqueId().toString();
+        players.set(k + ".x", l.getX());
+        players.set(k + ".y", l.getY());
+        players.set(k + ".z", l.getZ());
+        players.set(k + ".yaw", (double) l.getYaw());
+        players.set(k + ".pitch", (double) l.getPitch());
+        savePlayers();
+    }
+
+    private Location savedSurvivalLocation(Player p) {
+        World w = Bukkit.getWorld(survivalName);
+        String k = p.getUniqueId().toString();
+        if (w == null || !players.contains(k + ".x")) {
+            return null;
+        }
+        return new Location(w, players.getDouble(k + ".x"), players.getDouble(k + ".y"),
+                players.getDouble(k + ".z"), (float) players.getDouble(k + ".yaw"),
+                (float) players.getDouble(k + ".pitch"));
     }
 
     private void saveData() {
@@ -372,7 +472,18 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     public void onQuit(PlayerQuitEvent e) {
         cooldowns.remove(e.getPlayer().getUniqueId());
         voidPending.remove(e.getPlayer().getUniqueId());
+        saveSurvivalLocation(e.getPlayer(), e.getPlayer().getLocation());
         cancelReturn(e.getPlayer(), null);
+    }
+
+    /** Ao sair da sobrevivência (NPC, /lob, portal), lembra o ponto de onde ele saiu. */
+    @EventHandler(ignoreCancelled = true)
+    public void onTeleportOut(PlayerTeleportEvent e) {
+        Location from = e.getFrom();
+        Location to = e.getTo();
+        if (to != null && isSurvival(from.getWorld()) && to.getWorld() != from.getWorld()) {
+            saveSurvivalLocation(e.getPlayer(), from);
+        }
     }
 
     @EventHandler
@@ -420,14 +531,18 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     /** Quem morre no mundo de sobrevivência (sem cama) renasce lá, não no mundo principal. */
     @EventHandler
     public void onRespawn(PlayerRespawnEvent e) {
-        if (e.isBedSpawn() || e.isAnchorSpawn()) {
+        boolean bed = e.isBedSpawn() || e.isAnchorSpawn();
+        if (bed && !ignoreBed) {
             return;
         }
         World survival = Bukkit.getWorld(survivalName);
         if (survival == null || !e.getPlayer().getWorld().equals(survival)) {
             return;
         }
-        e.setRespawnLocation(survival.getSpawnLocation().add(0.5, 0, 0.5));
+        Location dest = respawnAtSurvivalLobby ? survivalLobby() : survival.getSpawnLocation().add(0.5, 0, 0.5);
+        if (dest != null) {
+            e.setRespawnLocation(dest);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -608,12 +723,15 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         }
         cooldowns.put(p.getUniqueId(), now);
 
-        World target = Bukkit.getWorld(survivalName);
-        if (target == null) {
+        Location dest = savedSurvivalLocation(p);
+        if (dest == null) {
+            dest = survivalLobby();
+        }
+        if (dest == null) {
             p.sendMessage(c(msgUnavailable));
             return;
         }
-        p.teleport(target.getSpawnLocation().add(0.5, 0, 0.5));
+        p.teleport(dest);
         p.sendMessage(c(msgTeleporting));
     }
 
@@ -711,6 +829,147 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     }
 
     // ------------------------------------------------------------------
+    // Neve do Natal (somente no lobby)
+    // ------------------------------------------------------------------
+
+    /** Neve caindo rápido ao redor de cada jogador do lobby, só visual. */
+    private void tickSnow() {
+        if (!snowEnabled) {
+            return;
+        }
+        World lobby = Bukkit.getWorld(lobbyName);
+        if (lobby == null) {
+            return;
+        }
+        ThreadLocalRandom rnd = ThreadLocalRandom.current();
+        for (Player p : lobby.getPlayers()) {
+            Location l = p.getLocation();
+            for (int i = 0; i < snowDensity; i++) {
+                double x = l.getX() + (rnd.nextDouble() * 2 - 1) * snowRadius;
+                double z = l.getZ() + (rnd.nextDouble() * 2 - 1) * snowRadius;
+                double y = l.getY() + 2 + rnd.nextDouble() * snowHeight;
+                p.spawnParticle(Particle.SNOWFLAKE, x, y, z, 0, 0.0, -1.0, 0.0, snowSpeed);
+            }
+        }
+    }
+
+    private boolean neveCommand(CommandSender sender, String[] args) {
+        String sub = args.length == 0 ? "status" : args[0].toLowerCase(Locale.ROOT);
+
+        if (sub.equals("on") || sub.equals("off")) {
+            snowEnabled = sub.equals("on");
+            data.set("snow-enabled", snowEnabled);
+            saveData();
+            sender.sendMessage(c(snowEnabled ? "&bNeve ligada no lobby." : "&eNeve desligada no lobby."));
+            return true;
+        }
+
+        if (sub.equals("encher") || sub.equals("limpar")) {
+            if (!(sender instanceof Player p)) {
+                sender.sendMessage(c("&cUse este comando dentro do jogo."));
+                return true;
+            }
+            if (!isLobby(p.getWorld())) {
+                p.sendMessage(c("&cEntre no mundo do lobby (&e" + lobbyName + "&c) para usar este comando."));
+                return true;
+            }
+            if (snowJob != null) {
+                p.sendMessage(c("&eJá existe uma operação de neve em andamento. Aguarde terminar."));
+                return true;
+            }
+            int radius = fillDefaultRadius;
+            if (args.length > 1) {
+                try {
+                    radius = Integer.parseInt(args[1]);
+                } catch (NumberFormatException ex) {
+                    p.sendMessage(c("&cRaio inválido. Exemplo: &e/neve " + sub + " 60"));
+                    return true;
+                }
+            }
+            radius = Math.max(1, Math.min(radius, fillMaxRadius));
+            startSnowJob(p, sub.equals("encher"), radius);
+            return true;
+        }
+
+        sender.sendMessage(c("&eNeve: " + (snowEnabled ? "&bligada" : "&7desligada")));
+        sender.sendMessage(c("&e/neve on|off &7- liga/desliga a nevasca no lobby"));
+        sender.sendMessage(c("&e/neve encher [raio] &7- cobre o lobby de neve ao redor de você (padrão " + fillDefaultRadius + ")"));
+        sender.sendMessage(c("&e/neve limpar [raio] &7- remove a neve ao redor de você"));
+        return true;
+    }
+
+    private void startSnowJob(Player p, boolean fill, int radius) {
+        final World w = p.getWorld();
+        final int cx = p.getLocation().getBlockX();
+        final int cz = p.getLocation().getBlockZ();
+        final int r = radius;
+        final UUID id = p.getUniqueId();
+        final int[] pos = {-r, -r};
+        final int[] changed = {0};
+
+        p.sendMessage(c("&b" + (fill ? "Enchendo" : "Limpando") + " a neve em raio de " + r
+                + " blocos... isso pode levar alguns segundos."));
+
+        snowJob = Bukkit.getScheduler().runTaskTimer(this, () -> {
+            int n = 0;
+            while (n < columnsPerTick && pos[0] <= r) {
+                int dx = pos[0];
+                int dz = pos[1];
+                if (dx * dx + dz * dz <= r * r && processSnowColumn(w, cx + dx, cz + dz, fill)) {
+                    changed[0]++;
+                }
+                n++;
+                pos[1]++;
+                if (pos[1] > r) {
+                    pos[1] = -r;
+                    pos[0]++;
+                }
+            }
+            if (pos[0] > r) {
+                if (snowJob != null) {
+                    snowJob.cancel();
+                    snowJob = null;
+                }
+                Player target = Bukkit.getPlayer(id);
+                if (target != null) {
+                    target.sendMessage(c("&a" + (fill ? "Neve colocada" : "Neve removida") + " em "
+                            + changed[0] + " pontos."));
+                }
+            }
+        }, 1L, 1L);
+    }
+
+    /** Coloca ou remove uma camada de neve no ponto mais alto da coluna (só em chunks já carregados). */
+    private boolean processSnowColumn(World w, int x, int z, boolean fill) {
+        if (!w.isChunkLoaded(x >> 4, z >> 4)) {
+            return false;
+        }
+        int y = w.getHighestBlockYAt(x, z, HeightMap.WORLD_SURFACE);
+        if (y < w.getMinHeight() || y + 1 >= w.getMaxHeight()) {
+            return false;
+        }
+        Block top = w.getBlockAt(x, y, z);
+        if (fill) {
+            if (top.getType() == Material.SNOW || !top.getType().isSolid()) {
+                return false;
+            }
+            Block above = top.getRelative(BlockFace.UP);
+            if (!above.getType().isAir()) {
+                return false;
+            }
+            Snow layer = (Snow) Material.SNOW.createBlockData();
+            layer.setLayers(1 + ThreadLocalRandom.current().nextInt(2));
+            above.setBlockData(layer, false);
+            return true;
+        }
+        if (top.getType() == Material.SNOW) {
+            top.setType(Material.AIR, false);
+            return true;
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------
     // Comando /lobbyguard
     // ------------------------------------------------------------------
 
@@ -729,6 +988,26 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
             data.set("npc", null);
             saveData();
             sender.sendMessage(c("&aNPC removido."));
+            return true;
+        }
+
+        if (sub.equals("setsurvivallobby")) {
+            if (!(sender instanceof Player p)) {
+                sender.sendMessage(c("&cUse este comando dentro do jogo."));
+                return true;
+            }
+            if (!isSurvival(p.getWorld())) {
+                p.sendMessage(c("&cEntre no mundo de sobrevivência (&e" + survivalName + "&c) para usar este comando."));
+                return true;
+            }
+            Location l = p.getLocation();
+            data.set("survival-lobby.x", l.getX());
+            data.set("survival-lobby.y", l.getY());
+            data.set("survival-lobby.z", l.getZ());
+            data.set("survival-lobby.yaw", (double) l.getYaw());
+            data.set("survival-lobby.pitch", (double) l.getPitch());
+            saveData();
+            p.sendMessage(c("&aLobby da sobrevivência definido aqui. Novos jogadores e quem morrer aparecem neste ponto."));
             return true;
         }
 
@@ -764,6 +1043,7 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         sender.sendMessage(c("&e/lobbyguard setnpc &7- cria o NPC na sua posição (no lobby)"));
         sender.sendMessage(c("&e/lobbyguard removenpc &7- remove o NPC"));
         sender.sendMessage(c("&e/lobbyguard setspawn &7- define o spawn do lobby na sua posição"));
+        sender.sendMessage(c("&e/lobbyguard setsurvivallobby &7- define o lobby da sobrevivência (no mundo survival)"));
         sender.sendMessage(c("&e/lobbyguard reload &7- recarrega o config.yml"));
         return true;
     }

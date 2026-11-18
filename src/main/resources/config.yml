@@ -32,6 +32,23 @@ npc:
   # Tempo mínimo entre dois cliques do mesmo jogador (milissegundos)
   click-cooldown-ms: 1500
 
+# Sobrevivência: quem morre volta ao lobby da sobrevivência (definido com
+# /lobbyguard setsurvivallobby). Ao clicar no NPC, o jogador volta para onde estava
+# na última vez que saiu da sobrevivência (base); se nunca esteve lá, vai ao lobby dela.
+survival:
+  respawn-at-lobby: true
+  ignore-bed: true     # true = morrer sempre leva ao lobby da sobrevivência, mesmo com cama
+
+# Neve do Natal (comando /neve). Só vale no lobby.
+snow:
+  density: 30              # flocos por jogador a cada 2 ticks (mais = mais neve e mais tráfego)
+  radius: 20               # distância horizontal da nevasca ao redor do jogador
+  height: 12               # altura acima do jogador onde os flocos nascem
+  fall-speed: 0.4          # velocidade da queda (maior = mais rápido)
+  fill-default-radius: 60  # raio padrão de /neve encher e /neve limpar
+  fill-max-radius: 150
+  columns-per-tick: 500    # colunas processadas por tick (menor = menos lag)
+
 # Comando /lob: volta ao lobby depois de alguns segundos. Se o jogador se mover
 # (mais que a tolerância, em blocos) ou levar dano, o retorno é cancelado.
 lob-command:
