@@ -32,12 +32,12 @@ npc:
   # Tempo mínimo entre dois cliques do mesmo jogador (milissegundos)
   click-cooldown-ms: 1500
 
-# Sobrevivência: quem morre volta ao lobby da sobrevivência (definido com
-# /lobbyguard setsurvivallobby). Ao clicar no NPC, o jogador volta para onde estava
-# na última vez que saiu da sobrevivência (base); se nunca esteve lá, vai ao lobby dela.
+# Sobrevivência: quem entra pela primeira vez (ou morre sem cama) é teleportado para um
+# ponto aleatório e seguro do mapa. Quem já jogou lá volta ao último lugar onde estava
+# ao clicar no NPC. Quem tem cama/âncora renasce nela quando morre.
 survival:
-  respawn-at-lobby: true
-  ignore-bed: true     # true = morrer sempre leva ao lobby da sobrevivência, mesmo com cama
+  random-radius: 3000   # distância máxima (em blocos) do centro do mundo; respeita a borda
+  pool-size: 5          # pontos seguros pré-carregados para o teleporte ser instantâneo
 
 # Neve do Natal (comando /neve). Só vale no lobby.
 snow:
@@ -66,3 +66,5 @@ messages:
   lob-already: "&eVocê já está no lobby."
   lob-in-progress: "&eVocê já está voltando ao lobby. Não se mova!"
   lob-unavailable: "&cO lobby não está disponível agora."
+  random-searching: "&eProcurando um lugar seguro..."
+  returned-to-last: "&aVocê voltou para onde estava na sobrevivência!"

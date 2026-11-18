@@ -2,12 +2,14 @@ package com.asthen.lobbyguard;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.concurrent.ThreadLocalRandom;
 
 import net.kyori.adventure.text.Component;
@@ -21,6 +23,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
+import org.bukkit.WorldBorder;
 import org.bukkit.WorldCreator;
 import org.bukkit.WorldType;
 import org.bukkit.command.Command;
@@ -80,7 +83,7 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
 
     private static final String BYPASS = "lobbyguard.bypass";
     private static final List<String> NEVE_SUBCOMMANDS = List.of("on", "off", "encher", "limpar", "status");
-    private static final List<String> SUBCOMMANDS = List.of("setnpc", "removenpc", "setspawn", "setsurvivallobby", "reload");
+    private static final List<String> SUBCOMMANDS = List.of("setnpc", "removenpc", "setspawn", "reload");
 
     private final Map<UUID, Long> cooldowns = new HashMap<>();
     private final Map<UUID, BukkitTask> returning = new HashMap<>();
@@ -109,8 +112,10 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     private int fillDefaultRadius;
     private int fillMaxRadius;
     private int columnsPerTick;
-    private boolean respawnAtSurvivalLobby;
-    private boolean ignoreBed;
+    private int randomRadius;
+    private int poolSize;
+    private boolean poolSearching;
+    private final ArrayDeque<Location> spotPool = new ArrayDeque<>();
     private BukkitTask snowJob;
     private double lobbyMoveTolerance;
     private boolean createMissing;
@@ -160,6 +165,7 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         Bukkit.getScheduler().runTaskTimer(this, this::tickLobby, 40L, 40L);
         Bukkit.getScheduler().runTaskTimer(this, this::ensureNpc, 100L, 100L);
         Bukkit.getScheduler().runTaskTimer(this, this::tickSnow, 20L, 2L);
+        Bukkit.getScheduler().runTaskTimer(this, this::refillPool, 100L, 40L);
     }
 
     private void loadAll() {
@@ -196,8 +202,8 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         fillDefaultRadius = Math.max(1, c.getInt("snow.fill-default-radius", 60));
         fillMaxRadius = Math.max(fillDefaultRadius, c.getInt("snow.fill-max-radius", 150));
         columnsPerTick = Math.max(50, c.getInt("snow.columns-per-tick", 500));
-        respawnAtSurvivalLobby = c.getBoolean("survival.respawn-at-lobby", true);
-        ignoreBed = c.getBoolean("survival.ignore-bed", true);
+        randomRadius = Math.max(100, c.getInt("survival.random-radius", 3000));
+        poolSize = Math.max(0, c.getInt("survival.pool-size", 5));
 
         if (lobbyName.equalsIgnoreCase(survivalName)) {
             getLogger().warning("O mundo do lobby e o de sobrevivência têm o mesmo nome. Corrija o config.yml.");
@@ -279,19 +285,104 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         return w != null && w.getName().equalsIgnoreCase(survivalName);
     }
 
-    /** Lobby da sobrevivência (definido com /lobbyguard setsurvivallobby) ou o spawn do mundo. */
-    private Location survivalLobby() {
-        World w = Bukkit.getWorld(survivalName);
-        if (w == null) {
+    // ------------------------------------------------------------------
+    // Teleporte aleatório na sobrevivência
+    // ------------------------------------------------------------------
+
+    /** Sorteia x/z dentro do raio configurado, respeitando a borda do mundo. */
+    private int[] randomXZ(World w) {
+        WorldBorder b = w.getWorldBorder();
+        Location center = b.getCenter();
+        double half = Math.max(16.0, Math.min(randomRadius, b.getSize() / 2.0 - 16.0));
+        ThreadLocalRandom rnd = ThreadLocalRandom.current();
+        int x = (int) Math.floor(center.getX() + (rnd.nextDouble() * 2 - 1) * half);
+        int z = (int) Math.floor(center.getZ() + (rnd.nextDouble() * 2 - 1) * half);
+        return new int[] {x, z};
+    }
+
+    /** Devolve um ponto seguro na coluna x/z (chão sólido, sem líquido, com 2 blocos de ar) ou null. */
+    private Location validSpot(World w, int x, int z) {
+        int y = w.getHighestBlockYAt(x, z, HeightMap.MOTION_BLOCKING_NO_LEAVES);
+        if (y <= w.getMinHeight() + 1 || y + 3 >= w.getMaxHeight()) {
             return null;
         }
-        if (data.contains("survival-lobby.x")) {
-            return new Location(w,
-                    data.getDouble("survival-lobby.x"), data.getDouble("survival-lobby.y"),
-                    data.getDouble("survival-lobby.z"),
-                    (float) data.getDouble("survival-lobby.yaw"), (float) data.getDouble("survival-lobby.pitch"));
+        Material ground = w.getBlockAt(x, y, z).getType();
+        if (!ground.isSolid() || ground == Material.MAGMA_BLOCK || ground == Material.CACTUS
+                || ground == Material.CAMPFIRE || ground == Material.SOUL_CAMPFIRE
+                || ground == Material.SWEET_BERRY_BUSH) {
+            return null;
+        }
+        if (!w.getBlockAt(x, y + 1, z).getType().isAir() || !w.getBlockAt(x, y + 2, z).getType().isAir()) {
+            return null;
+        }
+        Location loc = new Location(w, x + 0.5, y + 1, z + 0.5,
+                (float) ThreadLocalRandom.current().nextDouble(0, 360), 0f);
+        return w.getWorldBorder().isInside(loc) ? loc : null;
+    }
+
+    /** Procura um ponto aleatório seguro carregando os chunks sem travar o servidor. */
+    private void findRandomSpot(World w, int attemptsLeft, Consumer<Location> done) {
+        if (attemptsLeft <= 0) {
+            done.accept(null);
+            return;
+        }
+        int[] xz = randomXZ(w);
+        w.getChunkAtAsync(xz[0] >> 4, xz[1] >> 4, true).whenComplete((chunk, ex) ->
+                Bukkit.getScheduler().runTask(this, () -> {
+                    Location spot = ex == null ? validSpot(w, xz[0], xz[1]) : null;
+                    if (spot != null) {
+                        done.accept(spot);
+                    } else {
+                        findRandomSpot(w, attemptsLeft - 1, done);
+                    }
+                }));
+    }
+
+    /** Mantém alguns pontos seguros já prontos para a entrada e a morte serem instantâneas. */
+    private void refillPool() {
+        if (poolSize <= 0 || poolSearching || spotPool.size() >= poolSize) {
+            return;
+        }
+        World w = Bukkit.getWorld(survivalName);
+        if (w == null) {
+            return;
+        }
+        poolSearching = true;
+        findRandomSpot(w, 15, loc -> {
+            poolSearching = false;
+            if (loc != null) {
+                spotPool.add(loc);
+            }
+        });
+    }
+
+    /** Fallback síncrono (usado na morte quando o pool está vazio). */
+    private Location syncRandomSpot(World w, int attempts) {
+        for (int i = 0; i < attempts; i++) {
+            int[] xz = randomXZ(w);
+            Location spot = validSpot(w, xz[0], xz[1]);
+            if (spot != null) {
+                return spot;
+            }
         }
         return w.getSpawnLocation().add(0.5, 0, 0.5);
+    }
+
+    private void sendToRandomSpot(Player p, World w) {
+        Location spot = spotPool.poll();
+        if (spot != null) {
+            p.teleport(spot);
+            p.sendMessage(c(msgTeleporting));
+            return;
+        }
+        p.sendMessage(c(msg("random-searching", "&eProcurando um lugar seguro...")));
+        findRandomSpot(w, 20, loc -> {
+            if (!p.isOnline()) {
+                return;
+            }
+            p.teleport(loc != null ? loc : w.getSpawnLocation().add(0.5, 0, 0.5));
+            p.sendMessage(c(msgTeleporting));
+        });
     }
 
     private void savePlayers() {
@@ -528,21 +619,21 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         });
     }
 
-    /** Quem morre no mundo de sobrevivência (sem cama) renasce lá, não no mundo principal. */
+    /** Quem morre na sobrevivência sem cama renasce em um ponto aleatório seguro dela. */
     @EventHandler
     public void onRespawn(PlayerRespawnEvent e) {
-        boolean bed = e.isBedSpawn() || e.isAnchorSpawn();
-        if (bed && !ignoreBed) {
-            return;
+        if (e.isBedSpawn() || e.isAnchorSpawn()) {
+            return; // quem tem cama/base renasce nela
         }
         World survival = Bukkit.getWorld(survivalName);
         if (survival == null || !e.getPlayer().getWorld().equals(survival)) {
             return;
         }
-        Location dest = respawnAtSurvivalLobby ? survivalLobby() : survival.getSpawnLocation().add(0.5, 0, 0.5);
-        if (dest != null) {
-            e.setRespawnLocation(dest);
+        Location spot = spotPool.poll();
+        if (spot == null) {
+            spot = syncRandomSpot(survival, 8);
         }
+        e.setRespawnLocation(spot);
     }
 
     // ------------------------------------------------------------------
@@ -723,16 +814,18 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         }
         cooldowns.put(p.getUniqueId(), now);
 
-        Location dest = savedSurvivalLocation(p);
-        if (dest == null) {
-            dest = survivalLobby();
-        }
-        if (dest == null) {
+        World survival = Bukkit.getWorld(survivalName);
+        if (survival == null) {
             p.sendMessage(c(msgUnavailable));
             return;
         }
-        p.teleport(dest);
-        p.sendMessage(c(msgTeleporting));
+        Location saved = savedSurvivalLocation(p);
+        if (saved != null) {
+            p.teleport(saved);
+            p.sendMessage(c(msg("returned-to-last", "&aVocê voltou para onde estava na sobrevivência!")));
+            return;
+        }
+        sendToRandomSpot(p, survival);
     }
 
 
@@ -991,26 +1084,6 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
             return true;
         }
 
-        if (sub.equals("setsurvivallobby")) {
-            if (!(sender instanceof Player p)) {
-                sender.sendMessage(c("&cUse este comando dentro do jogo."));
-                return true;
-            }
-            if (!isSurvival(p.getWorld())) {
-                p.sendMessage(c("&cEntre no mundo de sobrevivência (&e" + survivalName + "&c) para usar este comando."));
-                return true;
-            }
-            Location l = p.getLocation();
-            data.set("survival-lobby.x", l.getX());
-            data.set("survival-lobby.y", l.getY());
-            data.set("survival-lobby.z", l.getZ());
-            data.set("survival-lobby.yaw", (double) l.getYaw());
-            data.set("survival-lobby.pitch", (double) l.getPitch());
-            saveData();
-            p.sendMessage(c("&aLobby da sobrevivência definido aqui. Novos jogadores e quem morrer aparecem neste ponto."));
-            return true;
-        }
-
         if (sub.equals("setnpc") || sub.equals("setspawn")) {
             if (!(sender instanceof Player p)) {
                 sender.sendMessage(c("&cUse este comando dentro do jogo."));
@@ -1043,7 +1116,6 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         sender.sendMessage(c("&e/lobbyguard setnpc &7- cria o NPC na sua posição (no lobby)"));
         sender.sendMessage(c("&e/lobbyguard removenpc &7- remove o NPC"));
         sender.sendMessage(c("&e/lobbyguard setspawn &7- define o spawn do lobby na sua posição"));
-        sender.sendMessage(c("&e/lobbyguard setsurvivallobby &7- define o lobby da sobrevivência (no mundo survival)"));
         sender.sendMessage(c("&e/lobbyguard reload &7- recarrega o config.yml"));
         return true;
     }

@@ -15,7 +15,7 @@ commands:
     permission: lobbyguard.admin
   lobbyguard:
     description: Administra o lobby (NPC, spawn, reload)
-    usage: /lobbyguard <setnpc|removenpc|setspawn|setsurvivallobby|reload>
+    usage: /lobbyguard <setnpc|removenpc|setspawn|reload>
     permission: lobbyguard.admin
 permissions:
   lobbyguard.use:
