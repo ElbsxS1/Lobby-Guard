@@ -13,6 +13,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -73,6 +74,7 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     private static final List<String> SUBCOMMANDS = List.of("setnpc", "removenpc", "setspawn", "reload");
 
     private final Map<UUID, Long> cooldowns = new HashMap<>();
+    private final java.util.Set<UUID> voidPending = new java.util.HashSet<>();
 
     private NamespacedKey npcKey;
     private File dataFile;
@@ -359,6 +361,7 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
         cooldowns.remove(e.getPlayer().getUniqueId());
+        voidPending.remove(e.getPlayer().getUniqueId());
     }
 
     @EventHandler
@@ -383,9 +386,24 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
             return;
         }
         Player p = e.getPlayer();
-        p.setFallDistance(0f);
-        p.setVelocity(new Vector(0, 0, 0));
-        e.setTo(spawn);
+        GameMode gm = p.getGameMode();
+        if (gm == GameMode.CREATIVE || gm == GameMode.SPECTATOR
+                || p.getAllowFlight() || p.isFlying() || p.hasPermission(BYPASS)) {
+            return;
+        }
+        if (!voidPending.add(p.getUniqueId())) {
+            return;
+        }
+        // Teleporta no próximo tick, fora do evento de movimento.
+        Bukkit.getScheduler().runTask(this, () -> {
+            voidPending.remove(p.getUniqueId());
+            if (!p.isOnline()) {
+                return;
+            }
+            p.setFallDistance(0f);
+            p.setVelocity(new Vector(0, 0, 0));
+            p.teleport(spawn);
+        });
     }
 
     /** Quem morre no mundo de sobrevivência (sem cama) renasce lá, não no mundo principal. */
