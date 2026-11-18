@@ -36,7 +36,7 @@ npc:
 # ponto aleatório e seguro do mapa. Quem já jogou lá volta ao último lugar onde estava
 # ao clicar no NPC. Quem tem cama/âncora renasce nela quando morre.
 survival:
-  random-radius: 3000   # distância máxima (em blocos) do centro do mundo; respeita a borda
+  random-radius: 25000  # distância máxima (em blocos) do centro do mundo; respeita a borda
   pool-size: 5          # pontos seguros pré-carregados para o teleporte ser instantâneo
 
 # Neve do Natal (comando /neve). Só vale no lobby.

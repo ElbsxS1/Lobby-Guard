@@ -202,7 +202,7 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         fillDefaultRadius = Math.max(1, c.getInt("snow.fill-default-radius", 60));
         fillMaxRadius = Math.max(fillDefaultRadius, c.getInt("snow.fill-max-radius", 150));
         columnsPerTick = Math.max(50, c.getInt("snow.columns-per-tick", 500));
-        randomRadius = Math.max(100, c.getInt("survival.random-radius", 3000));
+        randomRadius = Math.max(100, c.getInt("survival.random-radius", 25000));
         poolSize = Math.max(0, c.getInt("survival.pool-size", 5));
 
         if (lobbyName.equalsIgnoreCase(survivalName)) {
