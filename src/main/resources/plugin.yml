@@ -4,11 +4,19 @@ main: com.asthen.lobbyguard.LobbyGuard
 api-version: '26.3'
 description: Lobby protegido com NPC que teleporta para o mundo de sobrevivência
 commands:
+  lob:
+    description: Volta ao lobby após 5 segundos parado
+    usage: /lob
+    aliases: [lobby, hub]
+    permission: lobbyguard.use
   lobbyguard:
     description: Administra o lobby (NPC, spawn, reload)
     usage: /lobbyguard <setnpc|removenpc|setspawn|reload>
     permission: lobbyguard.admin
 permissions:
+  lobbyguard.use:
+    description: Usar o comando /lob
+    default: true
   lobbyguard.admin:
     description: Usar o comando /lobbyguard
     default: op

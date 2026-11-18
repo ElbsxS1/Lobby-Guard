@@ -60,6 +60,7 @@ import org.bukkit.event.weather.WeatherChangeEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
@@ -74,6 +75,8 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     private static final List<String> SUBCOMMANDS = List.of("setnpc", "removenpc", "setspawn", "reload");
 
     private final Map<UUID, Long> cooldowns = new HashMap<>();
+    private final Map<UUID, BukkitTask> returning = new HashMap<>();
+    private final Map<UUID, Location> returnStart = new HashMap<>();
     private final java.util.Set<UUID> voidPending = new java.util.HashSet<>();
 
     private NamespacedKey npcKey;
@@ -87,6 +90,8 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     private String npcName;
     private String msgTeleporting;
     private String msgUnavailable;
+    private int lobbyDelay;
+    private double lobbyMoveTolerance;
     private boolean createMissing;
     private boolean teleportOnJoin;
     private boolean nightVision;
@@ -108,6 +113,9 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
 
         Bukkit.getPluginManager().registerEvents(this, this);
 
+        if (getCommand("lob") != null) {
+            getCommand("lob").setExecutor((sender, cmd, label, args) -> lobCommand(sender));
+        }
         if (getCommand("lobbyguard") != null) {
             getCommand("lobbyguard").setExecutor(this);
             getCommand("lobbyguard").setTabCompleter(this);
@@ -136,6 +144,8 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         npcName = c.getString("npc.name", "&a&l▶ Sobrevivência");
         clickCooldown = c.getLong("npc.click-cooldown-ms", 1500L);
         msgTeleporting = c.getString("messages.teleporting", "&aVocê foi enviado ao mundo de sobrevivência!");
+        lobbyDelay = Math.max(1, c.getInt("lob-command.delay-seconds", 5));
+        lobbyMoveTolerance = Math.max(0.05, c.getDouble("lob-command.move-tolerance", 0.3));
         msgUnavailable = c.getString("messages.survival-unavailable",
                 "&cO mundo de sobrevivência não está disponível agora.");
 
@@ -362,6 +372,7 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     public void onQuit(PlayerQuitEvent e) {
         cooldowns.remove(e.getPlayer().getUniqueId());
         voidPending.remove(e.getPlayer().getUniqueId());
+        cancelReturn(e.getPlayer(), null);
     }
 
     @EventHandler
@@ -606,6 +617,98 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         p.sendMessage(c(msgTeleporting));
     }
 
+
+    // ------------------------------------------------------------------
+    // Comando /lob (voltar ao lobby com contagem)
+    // ------------------------------------------------------------------
+
+    private String msg(String path, String def) {
+        return getConfig().getString("messages." + path, def);
+    }
+
+    private boolean lobCommand(CommandSender sender) {
+        if (!(sender instanceof Player p)) {
+            sender.sendMessage(c("&cUse este comando dentro do jogo."));
+            return true;
+        }
+        if (isLobby(p.getWorld())) {
+            p.sendMessage(c(msg("lob-already", "&eVocê já está no lobby.")));
+            return true;
+        }
+        Location spawn = lobbySpawn();
+        if (spawn == null) {
+            p.sendMessage(c(msg("lob-unavailable", "&cO lobby não está disponível agora.")));
+            return true;
+        }
+        if (returning.containsKey(p.getUniqueId())) {
+            p.sendMessage(c(msg("lob-in-progress", "&eVocê já está voltando ao lobby. Não se mova!")));
+            return true;
+        }
+
+        returnStart.put(p.getUniqueId(), p.getLocation());
+        p.sendMessage(c(msg("lob-start", "&eVoltando ao lobby em &6{seconds}&e segundos. &cNão se mova!")
+                .replace("{seconds}", String.valueOf(lobbyDelay))));
+
+        final int[] left = {lobbyDelay};
+        BukkitTask task = Bukkit.getScheduler().runTaskTimer(this, () -> {
+            if (!p.isOnline()) {
+                cancelReturn(p, null);
+                return;
+            }
+            left[0]--;
+            if (left[0] <= 0) {
+                cancelReturn(p, null);
+                Location dest = lobbySpawn();
+                if (dest == null) {
+                    p.sendMessage(c(msg("lob-unavailable", "&cO lobby não está disponível agora.")));
+                    return;
+                }
+                p.setFallDistance(0f);
+                p.teleport(dest);
+                p.sendMessage(c(msg("lob-done", "&aVocê voltou ao lobby!")));
+            } else {
+                p.sendActionBar(c(msg("lob-countdown", "&eVoltando ao lobby em &6{seconds}&e...")
+                        .replace("{seconds}", String.valueOf(left[0]))));
+            }
+        }, 20L, 20L);
+        returning.put(p.getUniqueId(), task);
+        return true;
+    }
+
+    /** Cancela a contagem do /lob. Se reason != null, avisa o jogador. */
+    private void cancelReturn(Player p, String reason) {
+        BukkitTask task = returning.remove(p.getUniqueId());
+        returnStart.remove(p.getUniqueId());
+        if (task == null) {
+            return;
+        }
+        task.cancel();
+        if (reason != null && p.isOnline()) {
+            p.sendMessage(c(reason));
+            p.sendActionBar(Component.empty());
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onLobMove(PlayerMoveEvent e) {
+        Player p = e.getPlayer();
+        Location start = returnStart.get(p.getUniqueId());
+        if (start == null || e.getTo() == null) {
+            return;
+        }
+        Location to = e.getTo();
+        if (to.getWorld() != start.getWorld()
+                || to.distanceSquared(start) > lobbyMoveTolerance * lobbyMoveTolerance) {
+            cancelReturn(p, msg("lob-cancelled", "&cVocê se moveu. Retorno ao lobby cancelado."));
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onLobDamage(EntityDamageEvent e) {
+        if (e.getEntity() instanceof Player p && returning.containsKey(p.getUniqueId())) {
+            cancelReturn(p, msg("lob-cancelled-damage", "&cVocê levou dano. Retorno ao lobby cancelado."));
+        }
+    }
 
     // ------------------------------------------------------------------
     // Comando /lobbyguard

@@ -32,6 +32,20 @@ npc:
   # Tempo mínimo entre dois cliques do mesmo jogador (milissegundos)
   click-cooldown-ms: 1500
 
+# Comando /lob: volta ao lobby depois de alguns segundos. Se o jogador se mover
+# (mais que a tolerância, em blocos) ou levar dano, o retorno é cancelado.
+lob-command:
+  delay-seconds: 5
+  move-tolerance: 0.3
+
 messages:
   teleporting: "&aVocê foi enviado ao mundo de sobrevivência!"
   survival-unavailable: "&cO mundo de sobrevivência não está disponível agora."
+  lob-start: "&eVoltando ao lobby em &6{seconds}&e segundos. &cNão se mova!"
+  lob-countdown: "&eVoltando ao lobby em &6{seconds}&e..."
+  lob-cancelled: "&cVocê se moveu. Retorno ao lobby cancelado."
+  lob-cancelled-damage: "&cVocê levou dano. Retorno ao lobby cancelado."
+  lob-done: "&aVocê voltou ao lobby!"
+  lob-already: "&eVocê já está no lobby."
+  lob-in-progress: "&eVocê já está voltando ao lobby. Não se mova!"
+  lob-unavailable: "&cO lobby não está disponível agora."
