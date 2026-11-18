@@ -52,7 +52,6 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerLeashEntityEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
@@ -589,12 +588,6 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         p.sendMessage(c(msgTeleporting));
     }
 
-    @EventHandler(ignoreCancelled = true)
-    public void onNpcLeash(PlayerLeashEntityEvent e) {
-        if (isNpc(e.getEntity())) {
-            e.setCancelled(true);
-        }
-    }
 
     // ------------------------------------------------------------------
     // Comando /lobbyguard
