@@ -37,6 +37,7 @@ npc:
 # ao clicar no NPC. Quem tem cama/âncora renasce nela quando morre.
 survival:
   random-radius: 25000  # distância máxima (em blocos) do centro do mundo; respeita a borda
+  border-margin: 800    # distância mínima da borda do mundo (nunca sorteia mais perto que isso)
   pool-size: 5          # pontos seguros pré-carregados para o teleporte ser instantâneo
 
 # Neve do Natal (comando /neve). Só vale no lobby.

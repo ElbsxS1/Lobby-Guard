@@ -113,6 +113,7 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     private int fillMaxRadius;
     private int columnsPerTick;
     private int randomRadius;
+    private int borderMargin;
     private int poolSize;
     private boolean poolSearching;
     private final ArrayDeque<Location> spotPool = new ArrayDeque<>();
@@ -203,6 +204,7 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         fillMaxRadius = Math.max(fillDefaultRadius, c.getInt("snow.fill-max-radius", 150));
         columnsPerTick = Math.max(50, c.getInt("snow.columns-per-tick", 500));
         randomRadius = Math.max(100, c.getInt("survival.random-radius", 25000));
+        borderMargin = Math.max(0, c.getInt("survival.border-margin", 800));
         poolSize = Math.max(0, c.getInt("survival.pool-size", 5));
 
         if (lobbyName.equalsIgnoreCase(survivalName)) {
@@ -293,7 +295,7 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     private int[] randomXZ(World w) {
         WorldBorder b = w.getWorldBorder();
         Location center = b.getCenter();
-        double half = Math.max(16.0, Math.min(randomRadius, b.getSize() / 2.0 - 16.0));
+        double half = Math.max(16.0, Math.min(randomRadius, b.getSize() / 2.0 - borderMargin));
         ThreadLocalRandom rnd = ThreadLocalRandom.current();
         int x = (int) Math.floor(center.getX() + (rnd.nextDouble() * 2 - 1) * half);
         int z = (int) Math.floor(center.getZ() + (rnd.nextDouble() * 2 - 1) * half);
