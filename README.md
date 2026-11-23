@@ -57,3 +57,14 @@ e também
 https://github.com/ElbsxS1/DiscordKitBridge
 e com o Bot 
 https://github.com/contatorzlkz-prog/BOT-ASTHEN
+
+## 🔗 Ecossistema Asthen
+
+Este projeto faz parte do ecossistema **Asthen**, um conjunto de plugins e ferramentas que trabalham juntos para integrar o servidor Minecraft, o gerenciamento de jogadores, o lobby, os comandos, os sistemas internos e o Discord.
+
+**Projetos relacionados:**
+
+- [AsthenEssencials](https://github.com/ElbsxS1/AsthenEssencials)
+- [DiscordKitBridge](https://github.com/ElbsxS1/DiscordKitBridge)
+- [Lobby-Guard](https://github.com/ElbsxS1/Lobby-Guard)
+- [BOT-ASTHEN](https://github.com/contatorzlkz-prog/BOT-ASTHEN)
