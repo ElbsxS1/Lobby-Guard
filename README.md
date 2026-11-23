@@ -52,6 +52,25 @@ O jar sai em `target/LobbyGuard-1.0.0.jar`. A dependência `paper-api` usa a fai
 - Portais do Nether/End dentro do mundo de sobrevivência seguem o comportamento padrão do Bukkit para mundos extras (levam aos mundos principais). Para dimensões próprias, use um plugin de mundos como o Multiverse.
 - O mundo do lobby é um mundo separado do principal (`world`). Se quiser usar o principal como lobby, coloque `lobby: world` no `config.yml`.
 
+## Eventos (módulo EventoBot, incluído)
+
+Um segundo aldeão no lobby leva ao mundo do evento. O mundo só fica carregado enquanto há evento.
+
+1. No lobby, no ponto do aldeão: `/event setnpc`.
+2. Coloque a pasta do mundo do evento no servidor com o nome `eventos` (configurável em `evento.mundo-evento`).
+3. `/event on` abre na hora, ou `/event time 2h5m53s` agenda a abertura.
+
+| Comando | O que faz |
+|---|---|
+| `/event on` | Carrega o mundo e libera o aldeão para todos |
+| `/event off` | Leva todos do evento ao lobby, descarrega o mundo e volta o nome para "Sem Evento" |
+| `/event time <2h5m53s>` | Contagem regressiva até abrir (o nome do aldeão mostra o tempo) |
+| `/event time cancel` | Cancela a contagem |
+| `/event setnpc` | Move o aldeão para a sua posição (no lobby) |
+| `/event status` | Mostra estado, tempo restante e posição do aldeão |
+
+Permissões: `/event` usa `lobbyguard.admin`; `lobbyguard.event.bypass` (OP por padrão) entra pelo aldeão mesmo com o evento fechado. O estado e a contagem ficam em `plugins/LobbyGuard/evento.yml`.
+
 ## 🔗 Ecossistema Asthen
 
 Este projeto faz parte do ecossistema **Asthen**, um conjunto de plugins e ferramentas que trabalham juntos para integrar o servidor Minecraft, o gerenciamento de jogadores, o lobby, os comandos, os sistemas internos e o Discord.

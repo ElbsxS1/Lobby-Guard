@@ -2,8 +2,13 @@ name: LobbyGuard
 version: ${project.version}
 main: com.asthen.lobbyguard.LobbyGuard
 api-version: '26.3'
-description: Lobby protegido com NPC que teleporta para o mundo de sobrevivência
+description: Lobby protegido, NPC para a sobrevivência, neve de Natal e aldeão de eventos
 commands:
+  event:
+    description: Controla o evento (abrir, fechar, contagem e posição do aldeão)
+    usage: /event <on|off|time|setnpc|status>
+    aliases: [evento]
+    permission: lobbyguard.admin
   lob:
     description: Volta ao lobby após 5 segundos parado
     usage: /lob
@@ -26,4 +31,7 @@ permissions:
     default: op
   lobbyguard.bypass:
     description: Ignorar as proteções do lobby (quebrar, colocar, etc.)
+    default: op
+  lobbyguard.event.bypass:
+    description: Entrar no evento pelo aldeão mesmo com o evento fechado
     default: op

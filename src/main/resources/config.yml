@@ -69,3 +69,21 @@ messages:
   lob-unavailable: "&cO lobby não está disponível agora."
   random-searching: "&eProcurando um lugar seguro..."
   returned-to-last: "&aVocê voltou para onde estava na sobrevivência!"
+
+# Evento: aldeão no lobby que leva ao mundo do evento (comando /event).
+# O mundo do evento só fica carregado enquanto o evento está aberto.
+evento:
+  # Nome da pasta do mundo do evento (coloque a pasta no servidor com este nome).
+  mundo-evento: "eventos"
+  # Mundo para onde voltam quando o evento fecha. Vazio = spawn do lobby do LobbyGuard.
+  mundo-retorno: ""
+  # Nome sobre o aldeão em cada estado. {tempo} vira a contagem regressiva (ex.: 2h05m53s).
+  nome-fechado: "&c&lSem Evento"
+  nome-agendado: "&e&lEvento começa em &f&l{tempo}"
+  nome-aberto: "&a&lEvento Aberto"
+  mensagens:
+    prefixo: "&8[&6Evento&8] "
+    evento-fechado: "&cNão há evento no momento."
+    evento-agendado: "&eO evento começa em &f{tempo}&e."
+    evento-aberto: "&aO evento começou! Fale com o aldeão no lobby para entrar."
+    evento-encerrado: "&eO evento foi encerrado. Você voltou ao lobby."
