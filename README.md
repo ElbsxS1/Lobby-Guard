@@ -51,3 +51,9 @@ O jar sai em `target/LobbyGuard-1.0.0.jar`. A dependência `paper-api` usa a fai
 
 - Portais do Nether/End dentro do mundo de sobrevivência seguem o comportamento padrão do Bukkit para mundos extras (levam aos mundos principais). Para dimensões próprias, use um plugin de mundos como o Multiverse.
 - O mundo do lobby é um mundo separado do principal (`world`). Se quiser usar o principal como lobby, coloque `lobby: world` no `config.yml`.
+
+## Esse Plugin trabalha com https://github.com/ElbsxS1/AsthenEssencials
+e também 
+https://github.com/ElbsxS1/DiscordKitBridge
+e com o Bot 
+https://github.com/contatorzlkz-prog/BOT-ASTHEN
