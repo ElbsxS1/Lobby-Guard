@@ -14,7 +14,6 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
-import com.asthen.lobbyguard.evento.EventoManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.HeightMap;
@@ -119,7 +118,6 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
     private boolean poolSearching;
     private final ArrayDeque<Location> spotPool = new ArrayDeque<>();
     private BukkitTask snowJob;
-    private EventoManager evento;
     private double lobbyMoveTolerance;
     private boolean createMissing;
     private boolean teleportOnJoin;
@@ -142,11 +140,6 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         loadAll();
 
         Bukkit.getPluginManager().registerEvents(this, this);
-
-        // Módulo de eventos (aldeão que leva ao mundo do evento, comando /event).
-        evento = new EventoManager(this, this::lobbySpawn);
-        evento.registrar();
-        Bukkit.getScheduler().runTask(this, evento::iniciar);
 
         if (getCommand("lob") != null) {
             getCommand("lob").setExecutor((sender, cmd, label, args) -> lobCommand(sender));
@@ -174,13 +167,6 @@ public final class LobbyGuard extends JavaPlugin implements Listener, TabExecuto
         Bukkit.getScheduler().runTaskTimer(this, this::ensureNpc, 100L, 100L);
         Bukkit.getScheduler().runTaskTimer(this, this::tickSnow, 20L, 2L);
         Bukkit.getScheduler().runTaskTimer(this, this::refillPool, 100L, 40L);
-    }
-
-    @Override
-    public void onDisable() {
-        if (evento != null) {
-            evento.parar();
-        }
     }
 
     private void loadAll() {
